@@ -1,4 +1,5 @@
 import PortCard from "./components/PortCard";
+import PortsMapClient from "./components/PortsMapClient";
 import { PORTS } from "./lib/ports";
 import { fetchPortTides } from "./lib/tides";
 
@@ -28,6 +29,12 @@ export default async function Home() {
               timeZone: "Europe/Paris",
             })}
           </p>
+        </div>
+      </section>
+
+      <section className="max-w-6xl mx-auto px-6 pt-8">
+        <div className="h-80 sm:h-96 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-white">
+          <PortsMapClient tides={tides} />
         </div>
       </section>
 
