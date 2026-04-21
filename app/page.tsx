@@ -6,7 +6,7 @@ import { fetchPortTides } from "./lib/tides";
 export const revalidate = 1800;
 
 export default async function Home() {
-  const results = await Promise.allSettled(PORTS.map(fetchPortTides));
+  const results = await Promise.allSettled(PORTS.map((p) => fetchPortTides(p)));
   const tides = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
   const failed = results.length - tides.length;
 

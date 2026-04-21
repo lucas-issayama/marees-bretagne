@@ -59,6 +59,18 @@ export default function PortsMap({ tides }: { tides: PortTides[] }) {
                     <strong>{formatTime(t.next.time)}</strong> ({t.next.height.toFixed(2)} m)
                   </div>
                 )}
+                {t.daily[0]?.coefficient != null && (
+                  <div className="mt-1">
+                    Coef. aujourd&apos;hui :{" "}
+                    <strong>{t.daily[0].coefficient}</strong>
+                  </div>
+                )}
+                <a
+                  href={`/ports/${t.port.slug}`}
+                  className="mt-2 inline-block text-sky-700 font-medium"
+                >
+                  Voir les prévisions →
+                </a>
               </div>
             </Popup>
           </CircleMarker>

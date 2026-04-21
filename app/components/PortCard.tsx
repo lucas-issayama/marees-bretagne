@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PortTides } from "../lib/tides";
 import TideChart from "./TideChart";
 
@@ -16,25 +17,28 @@ function formatDate(iso: string) {
   });
 }
 
-function groupByDay(extremes: PortTides["extremes"]) {
-  const groups = new Map<string, PortTides["extremes"]>();
-  for (const e of extremes) {
-    const key = new Date(e.time).toDateString();
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(e);
-  }
-  return Array.from(groups.entries()).slice(0, 2);
+function coefClasses(coef: number) {
+  if (coef >= 95) return "bg-emerald-700 text-white";
+  if (coef >= 80) return "bg-green-500 text-white";
+  if (coef >= 70) return "bg-lime-200 text-lime-900";
+  if (coef >= 45) return "bg-amber-50 text-amber-900";
+  return "bg-slate-100 text-slate-600";
 }
 
 export default function PortCard({ data }: { data: PortTides }) {
-  const days = groupByDay(data.extremes);
+  const days = data.daily.slice(0, 2);
 
   return (
     <article className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden">
       <header className="px-5 pt-5 pb-3 flex items-baseline justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">
-            {data.port.name}
+            <Link
+              href={`/ports/${data.port.slug}`}
+              className="hover:text-sky-700 transition-colors"
+            >
+              {data.port.name}
+            </Link>
           </h2>
           <p className="text-xs text-slate-500">{data.port.department}</p>
         </div>
@@ -55,13 +59,23 @@ export default function PortCard({ data }: { data: PortTides }) {
       </div>
 
       <div className="px-5 py-4 border-t border-slate-100 grid gap-3">
-        {days.map(([day, extremes]) => (
-          <div key={day}>
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-1">
-              {formatDate(extremes[0].time)}
+        {days.map((day) => (
+          <div key={day.date}>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                {formatDate(day.extremes[0]?.time ?? day.date)}
+              </div>
+              {day.coefficient != null && (
+                <span
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${coefClasses(day.coefficient)}`}
+                  title="Coefficient de marée"
+                >
+                  Coef. {day.coefficient}
+                </span>
+              )}
             </div>
             <ul className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {extremes.map((e) => (
+              {day.extremes.map((e) => (
                 <li
                   key={e.time}
                   className={`rounded-lg px-2 py-1.5 text-sm flex flex-col ${
@@ -70,8 +84,13 @@ export default function PortCard({ data }: { data: PortTides }) {
                       : "bg-amber-50 text-amber-900"
                   }`}
                 >
-                  <span className="text-[10px] uppercase tracking-wide opacity-70">
-                    {e.type === "high" ? "Pleine mer" : "Basse mer"}
+                  <span className="text-[10px] uppercase tracking-wide opacity-70 flex items-center justify-between gap-1">
+                    <span>{e.type === "high" ? "Pleine mer" : "Basse mer"}</span>
+                    {e.type === "high" && e.coefficient != null && (
+                      <span className="font-semibold text-sky-700">
+                        {e.coefficient}
+                      </span>
+                    )}
                   </span>
                   <span className="font-medium">{formatTime(e.time)}</span>
                   <span className="text-xs opacity-80">
@@ -82,6 +101,12 @@ export default function PortCard({ data }: { data: PortTides }) {
             </ul>
           </div>
         ))}
+        <Link
+          href={`/ports/${data.port.slug}`}
+          className="mt-1 text-xs font-medium text-sky-700 hover:text-sky-900"
+        >
+          Voir les 7 jours →
+        </Link>
       </div>
     </article>
   );
