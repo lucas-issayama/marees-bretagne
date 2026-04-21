@@ -36,6 +36,29 @@ type MarineResponse = {
 // port. Calibrated against maree.info Brest, April 2026.
 const BREST_AMPLITUDE_CORRECTION = 1.2;
 
+// During `next build` the static prerender spins up several workers in
+// parallel and Open-Meteo's free tier returns 429 under burst. Retry with
+// exponential backoff honoring Retry-After on 429/503.
+async function fetchWithRetry(
+  url: string,
+  init?: RequestInit & { next?: { revalidate?: number | false } },
+  attempts = 5,
+): Promise<Response> {
+  let lastStatus = 0;
+  for (let i = 0; i < attempts; i++) {
+    const res = await fetch(url, init);
+    if (res.ok) return res;
+    lastStatus = res.status;
+    if (res.status !== 429 && res.status < 500) return res;
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1000
+      : Math.min(30_000, 1000 * 2 ** i + Math.random() * 500);
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+  return new Response(null, { status: lastStatus || 599 });
+}
+
 // Parse an Europe/Paris naive timestamp ("2026-04-20T09:00") as UTC so Date
 // arithmetic is safe and round-trips produce the same string.
 function parseNaive(iso: string): Date {
@@ -84,11 +107,33 @@ function dayKey(iso: string): string {
   return iso.slice(0, 10);
 }
 
+// Per-worker in-flight/result cache for Brest coef fetches. Next's fetch
+// memoization works within a single render pass, but the build spawns
+// several worker processes each rendering multiple port pages, so we also
+// dedupe at the module level to keep burst pressure off Open-Meteo.
+const brestCache = new Map<
+  string,
+  Promise<Map<string, [number | null, number | null]>>
+>();
+
 // Fetch Brest's raw MSL tide heights and derive the nationwide French
 // coefficient for each day, split into [AM, PM] slots. The coefficient is
 // astronomical and identical across France; applying the SHOM formula at the
 // Brest reference port yields the same value maree.info publishes.
-async function fetchBrestDailyCoefs(
+function fetchBrestDailyCoefs(
+  pastDays: number,
+  forecastDays: number,
+): Promise<Map<string, [number | null, number | null]>> {
+  const key = `${pastDays}:${forecastDays}`;
+  const hit = brestCache.get(key);
+  if (hit) return hit;
+  const promise = fetchBrestDailyCoefsUncached(pastDays, forecastDays);
+  brestCache.set(key, promise);
+  promise.catch(() => brestCache.delete(key));
+  return promise;
+}
+
+async function fetchBrestDailyCoefsUncached(
   pastDays: number,
   forecastDays: number,
 ): Promise<Map<string, [number | null, number | null]>> {
@@ -101,7 +146,9 @@ async function fetchBrestDailyCoefs(
   url.searchParams.set("timezone", "Europe/Paris");
   url.searchParams.set("past_days", String(pastDays));
   url.searchParams.set("forecast_days", String(forecastDays));
-  const res = await fetch(url.toString(), { next: { revalidate: 1800 } });
+  const res = await fetchWithRetry(url.toString(), {
+    next: { revalidate: 1800 },
+  });
   if (!res.ok) return new Map();
   const data = (await res.json()) as MarineResponse;
   const times = data.hourly?.time ?? [];
@@ -200,7 +247,7 @@ export async function fetchPortTides(
   url.searchParams.set("forecast_days", String(forecastDays));
 
   const [res, brestCoefs] = await Promise.all([
-    fetch(url.toString(), { next: { revalidate: 1800 } }),
+    fetchWithRetry(url.toString(), { next: { revalidate: 1800 } }),
     fetchBrestDailyCoefs(pastDays, forecastDays),
   ]);
   if (!res.ok) {
